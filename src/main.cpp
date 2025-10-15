@@ -8,27 +8,23 @@
 #include "SystemConfig.h"
 #include "Logger.h"
 #include "RS03Motor.h"
-#include "SpektrumSatelliteReader.h"
-#include "RCInputManager.h"
 #include "DisplayManager.h"
 #include "MotorController.h"
 #include "FeatherM4CanInterface.h"
 #include <CANSAME5x.h>
+#include <AlfredoCRSF.h>
 
 // ----- Global Objects -----
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 CANSAME5x CAN;
-SpektrumSatelliteReader spektrumReader(SPEKTRUM_SERIAL, 12, MIN_PULSE, MAX_PULSE, MID_PULSE);
+AlfredoCRSF crsf;
 
 // Hardware interfaces
 FeatherM4CanInterface canBus;
 RS03Motor motor1(canBus, MOTOR_ID_1, MASTER_ID);
 RS03Motor motor2(canBus, MOTOR_ID_2, MASTER_ID);
-
-// High-level managers  
-RCInputManager rcInput(spektrumReader);
-MotorController motorController(motor1, motor2, rcInput, pixels);
+MotorController motorController(motor1, motor2, pixels);
 
 // ----- System Status Variables -----
 static bool displayAvailable = false;
@@ -36,17 +32,24 @@ static bool rcAvailable = false;
 static bool canAvailable = false;
 static bool motorControllerAvailable = false;
 static bool motorsReady = false;
+struct SwitchStates {
+        bool switchA;
+        bool switchB;
+};
 
 // ----- Setup -----
 void setup() {
     // Initialize serial communication with timeout
     Serial.begin(115200);
+    Serial1.begin(CRSF_BAUDRATE);
+    if (!Serial1) while (1) Serial.println("Invalid crsfSerial configuration");
+    crsf.begin(Serial1);
+
     // Wait for serial connection with 5 second timeout
     unsigned long serialStartTime = millis();
     while (!Serial && (millis() - serialStartTime < 5000)) {
         delay(10); // Wait for serial connection, but not forever
     }
-    
     // Initialize logger
     Logger::init();
     Logger::info("Simple RC Channel Reader - Starting");
@@ -76,38 +79,6 @@ void setup() {
     pixels.setPixelColor(0, pixels.Color(50, 50, 0)); // Yellow while initializing
     pixels.show();
     Logger::info("NeoPixel initialized");
-    
-    // Initialize RC input (non-blocking)
-    if (spektrumReader.begin()) {
-        // Try to enable interrupt mode for better timing reliability
-        if (spektrumReader.beginInterruptMode(500)) {  // 500Hz = 2ms intervals
-            Logger::info("Spektrum reader initialized with interrupt mode (500Hz)");
-            if (Serial) {
-                Serial.println("RC Receiver: Interrupt mode enabled for better timing");
-            }
-        } else {
-            Logger::info("Spektrum reader initialized in polling mode");
-            if (Serial) {
-                Serial.println("RC Receiver: Using polling mode (interrupt not available)");
-            }
-        }
-        rcAvailable = true;
-    } else {
-        Logger::error("Spektrum reader initialization failed - continuing without RC input");
-        if (Serial) {
-            Serial.println("RC Receiver initialization failed - continuing without RC input");
-        }
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for error
-        pixels.show();
-        
-        if (displayAvailable) {
-            display.clearDisplay();
-            display.setCursor(0, 0);
-            display.println("RC Init Failed!");
-            display.println("Motors disabled");
-            display.display();
-        }
-    }
     
     // Initialize CAN bus (non-blocking)
     pinMode(PIN_CAN_STANDBY, OUTPUT);
@@ -355,89 +326,84 @@ static float nudgeableZeroPosition = 0.0f;  // Adjustable zero position (±0.2 r
 static unsigned long lastNudgeTime = 0;
 static bool wasNudging = false;
 
+
 // ----- Safety Variables -----
 static bool emergencyStopActive = false;
 static unsigned long noSignalStartTime = 0;
 static bool noSignalTimerActive = false;
 const unsigned long RC_TIMEOUT_MS = 3000;  // 3 seconds timeout
 
+void printChannels()
+{
+  for (int ChannelNum = 1; ChannelNum <= 16; ChannelNum++)
+  {
+    Serial.print(crsf.getChannel(ChannelNum));
+    Serial.print(", ");
+  }
+  Serial.println(" ");
+}
+
 // ----- Main Loop -----
 void loop() {
     static unsigned long lastUpdate = 0;
     static unsigned long lastSerialPrint = 0;
-    static unsigned long lastStatsLog = 0;
     static unsigned long lastMotorUpdate = 0;
-    
-    // Update RC receiver (only if RC is available)
-    // Note: In interrupt mode, this just checks timeout status
-    if (rcAvailable) {
-        spektrumReader.update();
-    }
+    crsf.update();
+    rcAvailable = crsf.isLinkUp();
+    //printChannels();
     
     // ----- SAFETY CHECK: RC Frame Timeout -----
-    if (rcAvailable && motorsReady) {
-        auto stats = spektrumReader.getFrameStats();
-        unsigned long currentTime = millis();
         
-        // Check if we've received any frames and if the last frame is too old
-        bool rcTimedOut = false;
-        if (stats.validFrames > 0 && stats.lastFrameTime > 0) {
-            unsigned long timeSinceLastFrame = currentTime - stats.lastFrameTime;
-            rcTimedOut = (timeSinceLastFrame > RC_TIMEOUT_MS);
-        } else if (stats.validFrames == 0) {
-            // No valid frames received yet - this is also a timeout condition
-            rcTimedOut = true;
-        }
+    // Handle emergency stop activation
+    if (!rcAvailable && !emergencyStopActive) {
+        emergencyStopActive = true;
+        Logger::error("RC SIGNAL TIMEOUT - EMERGENCY STOP ACTIVATED");
         
-        // Handle emergency stop activation
-        if (rcTimedOut && !emergencyStopActive) {
-            emergencyStopActive = true;
-            Logger::error("RC SIGNAL TIMEOUT - EMERGENCY STOP ACTIVATED");
-            
-            // Immediately stop motors
-            if (motorControllerAvailable) {
-                motor1.setModeVelocity();
-                motor2.setModeVelocity();
-                delay(50);
-                motor1.setVelocity(0.0f);
-                motor2.setVelocity(0.0f);
-                delay(200);
-                //Disable
-                motor1.disable();
-                motor2.disable();
-                delay(200);
+        // Immediately stop motors
+        if (motorControllerAvailable) {
+            motor1.setModeVelocity();
+            motor2.setModeVelocity();
+            delay(50);
+            motor1.setVelocity(0.0f);
+            motor2.setVelocity(0.0f);
+            delay(200);
+            //Disable
+            motor1.disable();
+            motor2.disable();
+            delay(200);
 
-                //Reset faults
-                motor1.resetFaults();
-                motor2.resetFaults();
-                delay(200);
-                //Enable motors
-            }
-            
-            // Reset control state
-            inPositionMode = false;
-            modeInitialized = false;
-            currentTargetPosition = 0.0f;
-            
-            // Visual indication
-            pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for emergency stop
-            pixels.show();
+            //Reset faults
+            motor1.resetFaults();
+            motor2.resetFaults();
+            delay(200);
+            //Enable motors
         }
         
-        // Handle recovery from emergency stop
-        if (!rcTimedOut && emergencyStopActive) {
-            emergencyStopActive = false;
-            Logger::info("RC SIGNAL RECOVERED - Emergency stop deactivated");
-            
-            // Reset mode initialization to allow proper mode setup
-            modeInitialized = false;
-            
-            // Visual indication back to normal
-            pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for normal operation
-            pixels.show();
-        }
+        // Reset control state
+        inPositionMode = false;
+        modeInitialized = false;
+        currentTargetPosition = 0.0f;
+        
+        // Visual indication
+        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red for emergency stop
+        pixels.show();
     }
-    
+        
+    // Handle recovery from emergency stop
+    if (rcAvailable && emergencyStopActive) {
+        emergencyStopActive = false;
+        Logger::info("RC SIGNAL RECOVERED - Emergency stop deactivated");
+
+        // Reset mode initialization to allow proper mode setup
+        modeInitialized = false;
+        
+        // Visual indication back to normal
+        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for normal operation
+        pixels.show();
+    }
+    /////////////////////////////////////////////////////////////////////////////////////////
+
+
     // Process CAN messages for motor feedback (only if CAN is available)
     if (canAvailable) {
         // Process available messages (reduced from 5 to 3 iterations to reduce loop time)
@@ -491,8 +457,9 @@ void loop() {
         }
     }
     
+    /*
     // Check if we're receiving signal (only if RC is available)
-    if (rcAvailable && !spektrumReader.isReceiving()) {
+    if (rcAvailable) {
         // Start no signal timer if not already started
         if (!noSignalTimerActive) {
             noSignalStartTime = millis();
@@ -550,6 +517,8 @@ void loop() {
             lastUpdate = millis();
         }
         
+
+        
         // Print to serial every 1000ms when no signal
         if (Serial && millis() - lastSerialPrint >= 1000) {
             if (emergencyStopActive) {
@@ -580,6 +549,8 @@ void loop() {
             pixels.show();
         }
     }
+
+    */
     
     // If RC is not available, skip RC-based control but continue with other functions
     if (!rcAvailable) {
@@ -615,21 +586,51 @@ void loop() {
     
     // Get decoded special channels (needed for display and motor control)
     int mode = 0;
-    SpektrumSatelliteReader::SwitchStates switches = {false, false};
-    SpektrumSatelliteReader::Channel8State ch8State = SpektrumSatelliteReader::CH8_LOW;
+    SwitchStates switches = {false, false};
     
     if (rcAvailable) {
-        mode = spektrumReader.getModeFromChannel4();  // Channel 4 mode selection
-        switches = spektrumReader.getSwitchStatesFromChannel6();  // Switch states
-        ch8State = spektrumReader.getChannel8State();  // Channel 8 state tracking
+        int ch4Value = crsf.getChannel(4);  // Channel 4 is 0-based index 3
+        // MODE VALUE mapping with ±40us wiggle room
+        mode = 0;  // Channel 4 mode selection
+        if (ch4Value >= 1166 && ch4Value <= 1246){mode = 1; }  // 1206 ± 40
+        if (ch4Value >= 1265 && ch4Value <= 1345){mode = 2; } // 1305 ± 40
+        if (ch4Value >= 1362 && ch4Value <= 1442){mode = 3; } // 1402 ± 40
+        if (ch4Value >= 1557 && ch4Value <= 1637){mode = 4; } // 1597 ± 40
+        if (ch4Value >= 1655 && ch4Value <= 1735){mode = 5; } // 1695 ± 40
+        if (ch4Value >= 1753 && ch4Value <= 1833){mode = 6; } // 1793 ± 40
+
+
+        int ch6Value = crsf.getChannel(6);  // Channel 6 is 0-based index 5
+        // Switch state mapping with ±40us wiggle room
+        if (ch6Value >= 1160 && ch6Value <= 1240) {
+            // A=OFF, B=OFF: 1200
+            switches.switchA = false;
+            switches.switchB = false;
+        }
+        else if (ch6Value >= 1350 && ch6Value <= 1450) {
+            // A=OFF, B=ON: 1400
+            switches.switchA = false;
+            switches.switchB = true;
+        }
+        else if (ch6Value >= 1550 && ch6Value <= 1650) {
+            // A=ON, B=OFF: 1599
+            switches.switchA = true;
+            switches.switchB = false;
+        }
+        else if (ch6Value >= 1750 && ch6Value <= 1850) {
+            // A=ON, B=ON: 1800
+            switches.switchA = true;
+            switches.switchB = true;
+    }
+
     }
     
             // Motor control logic (every 20ms) - only if motors are ready and not in emergency stop
         if (motorsReady && !emergencyStopActive && millis() - lastMotorUpdate >= 20) {
             // Get RC channel values
-            int ch5Value = spektrumReader.getChannel(4);  // Channel 5 for velocity control (0-indexed as 4)
-            int ch7Value = spektrumReader.getChannel(6);  // Channel 7 for Motor 1 control (0-indexed as 6)
-            int ch9Value = spektrumReader.getChannel(8);  // Channel 9 for Motor 2 control (0-indexed as 8)
+            int ch5Value = crsf.getChannel(5);  // Channel 5 for velocity control (0-indexed as 4)
+            int ch7Value = crsf.getChannel(7);  // Channel 7 for Motor 1 control (0-indexed as 6)
+            int ch9Value = crsf.getChannel(9);  // Channel 9 for Motor 2 control (0-indexed as 8)
         
         // Motor 1 is reversed by default
         bool motor1Reversed = true;
@@ -914,7 +915,7 @@ void loop() {
                     // Channel 10 provides additional shift of 0-0.8 rad when switches are pressed
                     
                     // Get Channel 10 value for shift calculation
-                    int ch10Value = spektrumReader.getChannel(9);  // Channel 10 (0-indexed as 9)
+                    int ch10Value = crsf.getChannel(10);  // Channel 10 (0-indexed as 9)
                     
                     // Map Channel 10 from pulse range to shift amount (0 to 0.8 radians)
                     float shiftAmount = 0.0f;
@@ -1140,8 +1141,8 @@ void loop() {
             }
         } else if (mode == 5) {
             // Mode 5: Individual motor control - calculate from channel values with display smoothing
-            int ch7Value = spektrumReader.getChannel(6);  // Channel 7 for Motor 1
-            int ch9Value = spektrumReader.getChannel(8);  // Channel 9 for Motor 2
+            int ch7Value = crsf.getChannel(7);  // Channel 7 for Motor 1
+            int ch9Value = crsf.getChannel(9);  // Channel 9 for Motor 2
             
             // Map Channel 7 to Motor 1 position
             float motor1Position = 0.0f;
@@ -1234,6 +1235,8 @@ void loop() {
         
         display.display();
         lastUpdate = millis();
+
+
     }
     
     // Print to serial console every 100ms (only if serial is available)
@@ -1288,8 +1291,8 @@ void loop() {
             }
         } else if (mode == 5) {
             // Mode 5: Individual motor control - calculate from channel values with serial smoothing
-            int ch7Value = spektrumReader.getChannel(6);  // Channel 7 for Motor 1
-            int ch9Value = spektrumReader.getChannel(8);  // Channel 9 for Motor 2
+            int ch7Value = crsf.getChannel(7);  // Channel 7 for Motor 1
+            int ch9Value = crsf.getChannel(9);  // Channel 9 for Motor 2
             
             // Map Channel 7 to Motor 1 position
             float motor1Position = 0.0f;
@@ -1386,28 +1389,6 @@ void loop() {
         lastSerialPrint = millis();
     }
     
-    // Print frame statistics every 5 seconds for debugging (only if serial is available)
-    if (Serial && millis() - lastStatsLog >= 5000) {
-        auto stats = spektrumReader.getFrameStats();
-        Serial.println();
-        Serial.println("=== FRAME STATISTICS ===");
-        Serial.print("Total Frames: "); Serial.println(stats.totalFrames);
-        Serial.print("Valid Frames: "); Serial.println(stats.validFrames);
-        Serial.print("Format Samples: "); Serial.println(stats.formatDetectSamples);
-        Serial.print("Format: "); Serial.println(stats.is11Bit ? "11-bit" : "10-bit");
-        Serial.print("Detected Channels: "); Serial.println(stats.detectedChannels);
-        Serial.print("Last Frame: "); Serial.print(millis() - stats.lastFrameTime); Serial.println("ms ago");
-        
-        // Calculate frame rate
-        if (stats.totalFrames > 0 && stats.lastFrameTime > 0) {
-            float frameRate = 1000.0 * stats.validFrames / stats.lastFrameTime;
-            Serial.print("Frame Rate: "); Serial.print(frameRate, 1); Serial.println(" Hz");
-        }
-        
-        Serial.println("========================");
-        Serial.println();
-        lastStatsLog = millis();
-    }
     
     // Small delay to prevent tight looping (reduced from 10ms since RC is interrupt-driven)
     delay(5);

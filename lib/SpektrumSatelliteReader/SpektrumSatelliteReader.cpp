@@ -41,28 +41,7 @@ SpektrumSatelliteReader::~SpektrumSatelliteReader() {
 }
 
 bool SpektrumSatelliteReader::begin() {
-    _serial.begin(SPEKTRUM_BAUD_RATE);
-    
-    // Clear any existing data in the buffer
-    while (_serial.available()) {
-        _serial.read();
-    }
-    
-    _frameIndex = 0;
-    _decodeState = DSM_DECODE_STATE_DESYNC;
-    _receivingSignal = false;
-    _lastFrameTime = millis();
-    _lastRxTime = millis();
-    
-    return true;
-}
-
-bool SpektrumSatelliteReader::beginBindMode() {
-    _serial.begin(SPEKTRUM_BAUD_RATE);
-    
-    while (_serial.available()) {
-        _serial.read();
-    }
+    crsf.begin(&Serial1, CRSF_BAUD_RATE);
     
     _frameIndex = 0;
     _decodeState = DSM_DECODE_STATE_DESYNC;
@@ -233,7 +212,7 @@ void SpektrumSatelliteReader::timerInterruptHandler() {
     TC3->COUNT16.INTFLAG.bit.MC0 = 1;
     #endif
 }
-
+//////////////////////////////////
 bool SpektrumSatelliteReader::processByte(uint32_t frameTimeMs, uint8_t b) {
     bool frameComplete = false;
     

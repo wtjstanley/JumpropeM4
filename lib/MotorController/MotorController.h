@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include "SystemConfig.h"
 #include "RS03Motor.h"
-#include "RCInputManager.h"
 #include "Logger.h"
 #include <Adafruit_NeoPixel.h>
 
@@ -12,7 +11,6 @@ class MotorController {
 private:
     RS03Motor& motor1;
     RS03Motor& motor2;
-    RCInputManager& rcInput;
     Adafruit_NeoPixel& pixels;
     
     // State variables
@@ -38,7 +36,7 @@ private:
     MotorRawFeedback motor2_feedback;
     
 public:
-    MotorController(RS03Motor& m1, RS03Motor& m2, RCInputManager& rc, Adafruit_NeoPixel& pix);
+    MotorController(RS03Motor& m1, RS03Motor& m2, Adafruit_NeoPixel& pix);
     
     // Initialization
     bool begin();

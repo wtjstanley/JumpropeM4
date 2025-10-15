@@ -2,6 +2,8 @@
 #define SPEKTRUM_SATELLITE_READER_H
 
 #include <Arduino.h>
+#include "Arduino-CRSF.h"
+
 
 class SpektrumSatelliteReader {
 public:
@@ -75,12 +77,13 @@ public:
         int detectedChannels;
     };
     FrameStats getFrameStats() const { return _frameStats; }
+    CRSF crsf;
 
 private:
     // Spektrum satellite protocol constants
     static const int DSM_FRAME_SIZE = 16;  // 16 bytes per frame
     static const int DSM_FRAME_CHANNELS = 7;  // 7 channels per frame max
-    static const unsigned long SPEKTRUM_BAUD_RATE = 115200;
+    static const unsigned long CRSF_BAUD_RATE = 420000;
     static const unsigned long FRAME_GAP_MS = 5;  // 5ms gap indicates new frame
     static const unsigned long SIGNAL_TIMEOUT_MS = 200; // Signal timeout
     

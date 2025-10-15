@@ -4,8 +4,8 @@
 
 extern CANSAME5x CAN;
 
-MotorController::MotorController(RS03Motor& m1, RS03Motor& m2, RCInputManager& rc, Adafruit_NeoPixel& pix)
-    : motor1(m1), motor2(m2), rcInput(rc), pixels(pix),
+MotorController::MotorController(RS03Motor& m1, RS03Motor& m2, Adafruit_NeoPixel& pix)
+    : motor1(m1), motor2(m2), pixels(pix),
       motorsInitialized(false), inPositionMode(false), modeInitialized(false),
       currentMotorSelection(MOTOR_1_ONLY), currentPosition(0.0f), rcCurrentLimit(MOTOR_CURRENT_LIMIT),
       lastZeroSetTime(0), holdingZeroPosition(false), zeroHoldStartTime(0),
@@ -30,6 +30,7 @@ bool MotorController::begin() {
     return true;
 }
 
+/*
 void MotorController::update() {
     // Update RC input
     rcInput.update();
@@ -312,7 +313,7 @@ void MotorController::update() {
         }
     }
 }
-
+*/
 void MotorController::initializeMotor(RS03Motor& motor) {
     Logger::info("Initializing motor with ID: " + String(motor.getMotorId()));
     

@@ -6,7 +6,6 @@
 // ----- Pin and Hardware Configuration -----
 #define PIN            8    // NeoPixel data pin
 #define NUMPIXELS      1    // Number of NeoPixels
-#define SPEKTRUM_SERIAL Serial1  // Serial port for Spektrum satellite receiver
 #define BIND_MODE_PIN  A0   // Pin to check for bind mode (connect to ground to enable bind mode)
 #define SPEKTRUM_RX_PIN 0   // Pin 0 (D0/RX) - used for both bind pulses and serial data
 #define MOTOR_ID_1     127  // First motor ID
