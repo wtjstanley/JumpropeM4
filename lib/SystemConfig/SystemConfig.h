@@ -18,13 +18,17 @@
 #define MID_PULSE      1500 // 1500us = dead zone
 #define MAX_PULSE      2000 // 2000us = 20 rad/s
 #define DEAD_ZONE      50   // ±50us dead zone around 1500us
-#define SPEKTRUM_CHANNEL   0    // First channel (0-based index) for motor speed control
-#define CURRENT_CHANNEL 1   // Channel 2 (zero-indexed as 1) for current limit control
-#define MODE_CHANNEL   2    // Channel 3 (zero-indexed as 2) for mode control
-#define POS_CHANNEL    0    // Channel 4 (zero-indexed as 3) for position control
-#define SELECT_CHANNEL 4    // Channel 5 (zero-indexed as 4) for motor selection
-#define ZERO_CHANNEL   5    // Channel 6 (zero-indexed as 5) for position zeroing
-#define SPEKTRUM_CHANNELS  7     // Total number of Spektrum channels (max 7 per frame)
+
+// crsf Channel
+#define CH_DRIVE_L 1    // Unused for the arms
+#define CH_DRIVE_R 2    // Unused for the arms
+#define CH_TRIM_L 3     // Position Trim Left arm
+#define CH_TRIM_R 4     // Position Trim Right arm
+#define CH_ESTOP 5        // Armed/Estop Channel
+#define CH_MODE 6       // Treated as a 4 position switch to set control mode
+#define CH_ANALOG_SWITCH 7  // Treated as a 4 position switch
+#define CH_L_ARM 8      // Directly sets position (with trim adjustment) or velocity depending on mode
+#define CH_R_ARM 9      // Directly sets position (with trim adjustment) or velocity depending on mode
 
 // ----- Bind Mode Configuration -----
 #define BIND_ENABLED false  // Set to true to enable bind mode
@@ -73,6 +77,18 @@ enum MotorSelection {
     MOTOR_1_ONLY,     // Motor 1 only (ID 127)
     MOTOR_2_ONLY,     // Motor 2 only (ID 126)
     BOTH_MOTORS       // Both motors, with motor 2 reversed
+};
+
+enum State {
+    TO_ESTOP,
+    ESTOP,
+    TO_MODE_CONTROL,        // Make sure things initialize out of ESTOP properly
+    VELOCITY_MODE,          // Previously Mode 1
+    POSITION_SETPOINT_MODE, // Previously Mode 3
+    POSITION_STOW_MODE,     // Previously Mode 4
+    POSITION_ANALOG_MODE,   // Previously Mode 5
+
+
 };
 
 // Define a structure to hold raw feedback data for each motor

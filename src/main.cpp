@@ -32,6 +32,9 @@ struct SwitchStates {
         bool switchB;
 };
 
+enum State current_state = TO_MODE_CONTROL;
+
+
 // ----- Setup -----
 void setup() {
     // Initialize serial communication with timeout
@@ -66,13 +69,18 @@ void setup() {
         pixels.show();
     }
 
-    delay(10000);
+    delay(5000);
     Serial.println("Arming");
 
     motor1.resetFaults();
     motor2.resetFaults();
     Serial.println("reset faults");
     delay(200);
+    motor1.setZeroFlag(1);
+    motor2.setZeroFlag(1);
+
+    bool zero1Success = motor1.setMechanicalZero();
+    bool zero2Success = motor2.setMechanicalZero();
 
     motor1.setModeVelocity();
     motor2.setModeVelocity();
@@ -83,11 +91,6 @@ void setup() {
     motor2.enable();
     Serial.println("enabled");
     delay(200);
-
-    motor1.setVelocity(10.0f);
-    motor2.setVelocity(10.0f);
-    Serial.println("spinning");
-    delay(10000);
 
     // motor1.setZeroFlag(1);
     // Serial.println("setZeroFlag");
@@ -142,23 +145,124 @@ void setup() {
    
     
 }
+
+State get_requested_mode(){
+    int mode_reading = crsf.getChannel(CH_MODE);
+    Serial.print(mode_reading);
+    Serial.print("  ");
+    if(mode_reading < 1250){
+        return VELOCITY_MODE;
+    }else if(mode_reading >= 1250 && mode_reading < 1500){
+        return POSITION_SETPOINT_MODE;
+    }else if(mode_reading >= 1500 && mode_reading < 1750){
+        return POSITION_STOW_MODE;
+    }else{
+        return POSITION_ANALOG_MODE;
+    }
+}
     
+
+void stateMachine(){
+    switch(current_state){
+        case TO_ESTOP:{
+                Logger::info("ESTOPPING");
+                pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red Sad
+                pixels.show();
+                motor1.disable();
+                motor2.disable();
+                current_state = ESTOP;
+        }
+            break;
+
+        case ESTOP:{
+                if(crsf.isLinkUp() && crsf.getChannel(CH_ESTOP) > 1500 ){
+                    current_state = TO_MODE_CONTROL;
+                    Logger::info("Leaving ESTOP");
+                }
+            }
+            break;
+
+        case TO_MODE_CONTROL:{
+                enum State next_mode = get_requested_mode();
+                Logger::info("Next State");
+                pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for normal operation
+                pixels.show();
+                motor1.resetFaults();
+                motor2.resetFaults();
+                if(next_mode == VELOCITY_MODE){
+                    Logger::info("Velocity");
+                    motor1.setModeVelocity();
+                    motor2.setModeVelocity();
+                }else{
+                    Logger::info("Position");
+                    motor1.setModePositionPP(POSITION_SPEED_LIMIT, POSITION_ACCELERATION, MOTOR_CURRENT_LIMIT);
+                    motor2.setModePositionPP(POSITION_SPEED_LIMIT, POSITION_ACCELERATION, MOTOR_CURRENT_LIMIT);
+                }
+                motor1.enable();
+                motor2.enable();
+                current_state = next_mode;
+            }
+            break;
+
+        case VELOCITY_MODE:{
+                // Boilerplate if statement to change states when necessary
+                if(get_requested_mode() != current_state){
+                    current_state = TO_MODE_CONTROL;
+                }
+
+                float velL = (crsf.getChannel(CH_L_ARM)-1500)/25.0;
+                float velR = (crsf.getChannel(CH_R_ARM)-1500)/25.0;
+                //Apply a small deadband 
+                if(abs(velL) < 0.1){ velL = 0.0; }
+                if(abs(velR) < 0.1){ velR = 0.0; }
+
+                motor1.setVelocity(velL);
+                motor2.setVelocity(velR);
+            }
+            break;
+        
+        case POSITION_SETPOINT_MODE:{
+                // Boilerplate if statement to change states when necessary
+                if(get_requested_mode() != current_state){
+                    current_state = TO_MODE_CONTROL;
+                }
+            }
+            break;
+        case POSITION_STOW_MODE:{
+                // Boilerplate if statement to change states when necessary
+                if(get_requested_mode() != current_state){
+                    current_state = TO_MODE_CONTROL;
+                }
+            }
+            break;
+        case POSITION_ANALOG_MODE:{
+                // Boilerplate if statement to change states when necessary
+                if(get_requested_mode() != current_state){
+                    current_state = TO_MODE_CONTROL;
+                }
+                
+                float posL = M_PI*(crsf.getChannel(CH_L_ARM)-1500)/500.0;
+                float posR = M_PI*(crsf.getChannel(CH_R_ARM)-1500)/500.0;
+
+                motor1.setPosition(posL);
+                motor2.setPosition(posR);
+            }
+            break;
+    }
+}
 
 // ----- Main Loop -----
 void loop() {
-    
+    //Any checks that should happen regardless of state
     crsf.update();
-    // Visual indication back to normal
-    if(crsf.isLinkUp()){
-        pixels.setPixelColor(0, pixels.Color(0, 50, 0)); // Green for normal operation
-    }else{
-        pixels.setPixelColor(0, pixels.Color(50, 0, 0)); // Red Sad
-    }
-    pixels.show();
-    //motor2.setModeVelocity();
-    delay(50);
-    motor1.setVelocity(10.0f);
-    Serial.println("test3");
-    delay(200);
+
     
+    //Set mode to estop last before running state machine as that takes highest priority
+    if((!crsf.isLinkUp() || crsf.getChannel(CH_ESTOP) < 1500) && ESTOP != current_state){
+        current_state = TO_ESTOP;
+    }
+
+    stateMachine();
+    Serial.println(current_state);
+    delay(50);
 } 
