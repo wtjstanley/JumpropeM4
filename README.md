@@ -1,12 +1,12 @@
 # JumpropeM4
 
 ## Overview
-JumpropeM4 is a firmware for the Adafruit Feather M4 CAN board to control RS03 motors for use in a jumprope training device. It supports multiple control modes including velocity control and various position control schemes using Spektrum satellite receiver input, and can control up to two motors on the same CAN bus.
+JumpropeM4 is a firmware for the Adafruit Feather M4 CAN board to control RS03 motors for use in a jumprope training device. It supports multiple control modes including velocity control and various position control schemes using CRSF input, and can control up to two motors on the same CAN bus.
 
 ## Features
 - Dual RS03 motor control using CAN bus communication (1 Mbit/s)
 - Six distinct operating modes with different control schemes
-- Spektrum satellite receiver input (DSM2/DSMX protocol)
+- CRSF Receiver input
 - Real-time motor feedback and status monitoring
 - Individual and synchronized motor control options
 - Emergency stop and error clearing functionality
@@ -22,7 +22,7 @@ JumpropeM4 is a firmware for the Adafruit Feather M4 CAN board to control RS03 m
 ## Hardware Requirements
 - Adafruit Feather M4 CAN board
 - Two RS03 motors with CAN interface (configurable IDs)
-- Spektrum satellite receiver (DSM2/DSMX compatible)
+- ELRS receiver (CRSF compatible)
 - SSD1306 OLED display (128x64 pixels, I2C)
 - NeoPixel LED (integrated on Feather board)
 - Appropriate power supply for motors and controller
@@ -30,7 +30,7 @@ JumpropeM4 is a firmware for the Adafruit Feather M4 CAN board to control RS03 m
 
 ## Pin Connections
 - **NeoPixel**: Integrated on Feather M4 board
-- **Spektrum Receiver**: Connected to hardware serial (configurable)
+- **ELRS Receiver**: Connected to hardware serial (configurable)
 - **CAN Bus**: Connected to RS03 motors via CAN H/L pins
 - **I2C Display**: SDA/SCL pins for SSD1306 OLED
 - **CAN Control Pins**: Standby and Boost Enable pins for CAN transceiver
@@ -217,9 +217,10 @@ pio device monitor
    - Confirm motor CAN IDs match firmware configuration
 
 2. **No RC control**:
-   - Verify Spektrum receiver binding
+   - Verify ELRS receiver binding
    - Check receiver power and signal connections
    - Monitor serial output for frame statistics
+   - Confirm channel 5 armed
 
 3. **Position errors**:
    - Use Switch A to reset mechanical zero
