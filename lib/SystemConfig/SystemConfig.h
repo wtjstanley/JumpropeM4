@@ -6,18 +6,9 @@
 // ----- Pin and Hardware Configuration -----
 #define PIN            8    // NeoPixel data pin
 #define NUMPIXELS      1    // Number of NeoPixels
-#define SPEKTRUM_SERIAL Serial1  // Serial port for Spektrum satellite receiver
-#define BIND_MODE_PIN  A0   // Pin to check for bind mode (connect to ground to enable bind mode)
-#define SPEKTRUM_RX_PIN 0   // Pin 0 (D0/RX) - used for both bind pulses and serial data
 #define MOTOR_ID_1     1  // First motor ID
 #define MOTOR_ID_2     2  // Second motor ID
 #define MASTER_ID      0xFD // Default Master ID for commands
-
-// ----- Spektrum Satellite Configuration -----
-#define MIN_PULSE      1000 // 1000us = -20 rad/s
-#define MID_PULSE      1500 // 1500us = dead zone
-#define MAX_PULSE      2000 // 2000us = 20 rad/s
-#define DEAD_ZONE      50   // ±50us dead zone around 1500us
 
 // crsf Channel
 #define CH_DRIVE_L 1    // Unused for the arms
@@ -30,8 +21,6 @@
 #define CH_L_ARM 8      // Directly sets position (with trim adjustment) or velocity depending on mode
 #define CH_R_ARM 9      // Directly sets position (with trim adjustment) or velocity depending on mode
 
-// ----- Bind Mode Configuration -----
-#define BIND_ENABLED false  // Set to true to enable bind mode
 
 // ----- Mode Selection Thresholds -----
 #define MODE_THRESHOLD 1800 // Above 1800us = position mode, below = velocity mode
@@ -83,10 +72,13 @@ enum State {
     TO_ESTOP,
     ESTOP,
     TO_MODE_CONTROL,        // Make sure things initialize out of ESTOP properly
+    
+    TORQUE_MODE,
     VELOCITY_MODE,          // Previously Mode 1
     POSITION_SETPOINT_MODE, // Previously Mode 3
     POSITION_STOW_MODE,     // Previously Mode 4
     POSITION_ANALOG_MODE,   // Previously Mode 5
+    SET_MECHANICAL_ZERO_MODE 
 
 
 };
